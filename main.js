@@ -3,60 +3,100 @@ in vec2 aVertexPosition;
 out vec2 vUv;
 
 void main() {
-  vUv = aVertexPosition * 0.5 + 0.5;
+  vUv = aVertexPosition;
   gl_Position = vec4(aVertexPosition, 0.0, 1.0);
 }
 `;
 
-function fragmentTemplate(frag) {
-  result = `#version 300 es
+const PER_SEG = 20;
+const BALLS = 7 * 4 * PER_SEG;
+
+function fragmentTemplate() {
+  return `#version 300 es
 precision highp float;
+in vec2 vUv;
 out vec4 fragColor;
-uniform int time;
+uniform float time;
 
-uniform int scale;
+uniform vec3 balls[${BALLS}];
 
-uniform vec3 c1;
-uniform vec3 c2;
-
-vec3 oklab_mix(vec3 lin1, vec3 lin2, float a)
-{
-    // https://bottosson.github.io/posts/oklab
-    const mat3 kCONEtoLMS = mat3(
-         0.4121656120,  0.2118591070,  0.0883097947,
-         0.5362752080,  0.6807189584,  0.2818474174,
-         0.0514575653,  0.1074065790,  0.6302613616);
-    const mat3 kLMStoCONE = mat3(
-         4.0767245293, -1.2681437731, -0.0041119885,
-        -3.3072168827,  2.6093323231, -0.7034763098,
-         0.2307590544, -0.3411344290,  1.7068625689);
-
-    // rgb to cone (arg of pow can't be negative)
-    vec3 lms1 = pow( kCONEtoLMS*lin1, vec3(1.0/3.0) );
-    vec3 lms2 = pow( kCONEtoLMS*lin2, vec3(1.0/3.0) );
-    // lerp
-    vec3 lms = mix( lms1, lms2, a );
-    // gain in the middle (no oklab anymore, but looks better?)
-    lms *= 1.0+0.2*a*(1.0-a);
-    // cone to rgb
-    return kLMStoCONE*(lms*lms*lms);
-}
-
-int pmod(int a, int b) {
-    int r = a % b;
-    return r < 0 ? r + abs(b) : r;
+float circle(vec2 uv, vec2 pos, float r) {
+    // wobble
+    r += sin(uv.x * 30.0 + uv.y * 30.0 + time) * 0.0005;
+    // return max(0.0, 1.0 - dot(uv, pos) / (r * r));
+    return r/distance(uv, pos);
 }
 
 void main() {
-int x = int(gl_FragCoord.x / float(scale)) * scale;
-int y = int(gl_FragCoord.y / float(scale)) * scale;
-${frag}
-float res = float(result);
-fragColor = vec4(oklab_mix(c1, c2, res / 255.0), 1.0);
+  // vec3 color = step(d, 0.5) * vec3(1.0, 1.0, 1.0);
+  // vec3 color = vec3(0.0);
+
+  vec3 color = vec3(0.0);
+  float influence = 0.0;
+  for (int i = 0; i < ${BALLS}; ++i) {
+    vec3 b = balls[i];
+    influence = max(influence, circle(vUv, b.xy, b.z));
+  }
+  color += step(0.12, influence) * vec3(1.0);
+  // color = vec3(influence);
+  fragColor = vec4(1.0 - color, 1.0);
 }
   `;
-  console.log(result);
-  return result;
+}
+
+const s = [
+  0b00111111, // 0
+  0b00000110, // 1
+  0b01101101, // 2
+  0b01001111, // 3
+  0b01010110, // 4
+  0b01011011, // 5
+  0b01111011, // 6
+  0b00001110, // 7
+  0b01111111, // 8
+  0b01011111, // 9
+];
+
+const gap = 0.2;
+const lines = [
+  [
+    [-0.5 + gap, -1],
+    [0.5 - gap, -1],
+  ], // A
+  [
+    [0.5, -1.0 + gap],
+    [0.5, 0.0 - gap],
+  ], // B
+  [
+    [0.5, 0.0 + gap],
+    [0.5, 1 - gap],
+  ], // C
+  [
+    [-0.5 + gap, 1],
+    [0.5 - gap, 1],
+  ], // D
+  [
+    [-0.5, 0.0 + gap],
+    [-0.5, 1 - gap],
+  ], // E
+  [
+    [-0.5, -1 + gap],
+    [-0.5, 0 - gap],
+  ], // F
+  [
+    [-0.5 + gap, 0],
+    [0.5 - gap, 0],
+  ], // G
+];
+
+function timeToSegs(time) {
+  const hours = time.getHours() + cheese;
+  const h1 = hours % 10;
+  const h2 = Math.floor(hours / 10);
+  const minutes = time.getMinutes();
+  const m1 = minutes % 10;
+  const m2 = Math.floor(minutes / 10);
+  return [s[h2], s[h1], s[m2], s[m1]];
 }
 
 function compileShader(gl, code, type) {
@@ -97,7 +137,24 @@ function buildShaderProgram(gl, shaderInfo) {
   return program;
 }
 
-function setupShader(canvas, frag, c1, c2, scale) {
+const lerp = (start, end, t) => start + (end - start) * t;
+
+let cheese = 0;
+function addOne() {
+  cheese += 1;
+}
+
+function lineLerp(line, t) {
+  const [start, end] = line;
+  return [lerp(start[0], end[0], t), lerp(start[1], end[1], t)];
+}
+
+const freeAgents = new Set();
+
+// VALUE: remapped guy for idx
+const idx2slot = [];
+const slot2idx = [];
+function setupShader(canvas) {
   const gl = canvas.getContext("webgl2");
 
   const shaderSet = [
@@ -107,15 +164,38 @@ function setupShader(canvas, frag, c1, c2, scale) {
     },
     {
       type: gl.FRAGMENT_SHADER,
-      code: fragmentTemplate(frag),
+      code: fragmentTemplate(),
     },
   ];
 
   const shaderProgram = buildShaderProgram(gl, shaderSet);
   const timeLoc = gl.getUniformLocation(shaderProgram, "time");
-  const scaleLoc = gl.getUniformLocation(shaderProgram, "scale");
-  const c1Loc = gl.getUniformLocation(shaderProgram, "c1");
-  const c2Loc = gl.getUniformLocation(shaderProgram, "c2");
+  const ballsLoc = gl.getUniformLocation(shaderProgram, "balls");
+
+  const balls = Array(BALLS * 3).fill(0);
+  const ballData = new Float32Array(balls);
+
+  const now = timeToSegs(new Date());
+  for (let i = 0; i < BALLS * 3; i += 3) {
+    const idx = i / 3;
+    const l = Math.floor(idx / PER_SEG) % 7;
+    const n = Math.floor(idx / PER_SEG / 7);
+    const o = idx % PER_SEG;
+    const line = lines[l];
+    const [x, y] = lineLerp(line, (o + 1) / (PER_SEG + 1));
+    const on = Boolean(now[n] & (1 << l));
+    if (on) {
+      idx2slot.push(idx);
+      slot2idx.push(idx);
+    } else {
+      idx2slot.push(null);
+      slot2idx.push(null);
+      freeAgents.add(idx);
+    }
+    ballData[i + 0] = x * 0.2 + (n - 1.5) * 0.4 + Math.sign(n - 1.5) * 0.05;
+    ballData[i + 1] = -1.1;
+    ballData[i + 2] = 0.003 + Math.sin(i) * 0.001;
+  }
 
   // Vertex information
   const vertexArray = new Float32Array([
@@ -128,20 +208,86 @@ function setupShader(canvas, frag, c1, c2, scale) {
   const vertexCount = vertexArray.length / vertexNumComponents;
 
   // Animation timing
-  let time = 0;
-  const [r1, g1, b1] = c1.map((a) => a / 255.0);
-  const [r2, g2, b2] = c2.map((a) => a / 255.0);
+  let previousTime = 0.0;
+  let time = 0.0;
 
-  const animateScene = () => {
+  const animateScene = (delta) => {
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     gl.useProgram(shaderProgram);
-    gl.uniform1i(timeLoc, time);
-    gl.uniform1i(scaleLoc, Math.pow(2, scale));
-    gl.uniform3f(c1Loc, r1, g1, b1);
-    gl.uniform3f(c2Loc, r2, g2, b2);
+    gl.uniform1f(timeLoc, time);
+
+    const now = timeToSegs(new Date());
+
+    // free up agents
+    for (let i = 0; i < BALLS; i++) {
+      const l = Math.floor(i / PER_SEG) % 7;
+      const n = Math.floor(i / PER_SEG / 7);
+      const o = i % PER_SEG;
+      const on = Boolean(now[n] & (1 << l));
+      if (!on && slot2idx[i] !== null) {
+        const agent = slot2idx[i];
+        freeAgents.add(agent);
+        slot2idx[i] = null;
+        idx2slot[agent] = null;
+      }
+    }
+    // find new assignments, if needed
+    for (let i = 0; i < BALLS; i++) {
+      const l = Math.floor(i / PER_SEG) % 7;
+      const n = Math.floor(i / PER_SEG / 7);
+      const o = i % PER_SEG;
+      const on = Boolean(now[n] & (1 << l));
+      if (on && slot2idx[i] === null) {
+        const line = lines[l];
+        const [x, y] = lineLerp(line, (o + 1) / (PER_SEG + 1));
+        const tx = x * 0.2 + (n - 1.5) * 0.4 + Math.sign(n - 1.5) * 0.05;
+        const ty = y * 0.2;
+        let minDist = 1000.0;
+        let best = null;
+        freeAgents.forEach((agent) => {
+          const x = ballData[agent * 3];
+          const y = ballData[agent * 3 + 1];
+          const d2 = (x - tx) * (x - tx) + (y - ty) * (y - ty);
+          if (d2 < minDist) {
+            minDist = d2;
+            best = agent;
+          }
+        });
+        freeAgents.delete(best);
+        slot2idx[i] = best;
+        idx2slot[best] = i;
+      }
+    }
+    // move everybody around
+    for (let i = 0; i < BALLS * 3; i += 3) {
+      const idx = i / 3;
+      const assigned = idx2slot[idx];
+
+      if (assigned === null) {
+        if (ballData[i + 1] < -0.7) {
+          ballData[i + 0] += (Math.sin(i + Math.sin(time)) * delta) / 40000.0;
+        }
+        ballData[i + 0] = Math.min(Math.max(ballData[i + 0], -0.98), 0.98);
+        ballData[i + 1] -= delta / 20000.0;
+        ballData[i + 1] = Math.max(ballData[i + 1], -0.98);
+        continue;
+      }
+      const l = Math.floor(assigned / PER_SEG) % 7;
+      const n = Math.floor(assigned / PER_SEG / 7);
+      const o = assigned % PER_SEG;
+      const line = lines[l];
+      const [x, y] = lineLerp(line, (o + 1) / (PER_SEG + 1));
+      const tx = x * 0.2 + (n - 1.5) * 0.4 + Math.sign(n - 1.5) * 0.05;
+      const ty = y * 0.2;
+      const factor = 1 - Math.pow(1 - 0.1, delta / 200.0);
+      ballData[i + 0] += (tx - ballData[i + 0]) * factor;
+      ballData[i + 1] += (ty - ballData[i + 1]) * factor;
+      ballData[i + 2] = 0.003 + Math.sin(i) * 0.001;
+    }
+    gl.uniform3fv(ballsLoc, ballData);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
     aVertexPosition = gl.getAttribLocation(shaderProgram, "aVertexPosition");
@@ -158,90 +304,12 @@ function setupShader(canvas, frag, c1, c2, scale) {
 
     gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
 
-    requestAnimationFrame(() => {
-      animateScene();
-      time++;
+    requestAnimationFrame((currentTime) => {
+      const delta = currentTime - previousTime;
+      time += delta / 1000.0;
+      animateScene(delta);
+      previousTime = currentTime;
     });
   };
-  animateScene();
-}
-function parseCookies(cookieString) {
-  const cookies = cookieString.split("; ");
-  const cookiesDict = {};
-  for (const cookie of cookies) {
-    const [key, value] = cookie.split("=", 2);
-    cookiesDict[key] = value;
-  }
-  return cookiesDict;
-}
-
-const marketing = "Generated by receipt-math.recurse.com\n\n";
-function sendCanvasToPrinter(canvas, text) {
-  const csrf = parseCookies(document.cookie).receipt_csrf;
-  if (!csrf) {
-    alert("Please click 'login' at the top of the page first.");
-    return;
-  }
-  canvas.toBlob(async (blob) => {
-    await fetch("https://receipt.recurse.com/text", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRF-Token": csrf,
-      },
-      body: JSON.stringify({
-        text: marketing + text,
-        coda: "newline",
-      }),
-    });
-    fetch("https://receipt.recurse.com/image", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "X-CSRF-Token": csrf,
-      },
-      body: blob,
-    });
-  }, "image/png");
-}
-
-function p(s) {
-  const el = document.createElement("p");
-  el.innerHTML = s;
-  return el;
-}
-
-function a(s, url) {
-  const el = document.createElement("a");
-  el.innerHTML = s;
-  el.href = url;
-  return el;
-}
-function setupLoginSection() {
-  const csrf = parseCookies(document.cookie).receipt_csrf;
-  if (!window.location.origin.match(/.recurse.com\/?$/)) {
-    loginDiv.appendChild(
-      p(
-        'This is not a *.recurse.com subdomain, so it will not be able to make authenticated requests to <a href="https://receipt.recurse.com">https://receipt.recurse.com</a>.',
-      ),
-    );
-    loginDiv.appendChild(
-      p(
-        'Please visit <a href="https://receipt-tester.recurse.com">https://receipt-tester.recurse.com</a> for the full experience.',
-      ),
-    );
-    return;
-  }
-  if (csrf) {
-    loginDiv.appendChild(p("You are logged in."));
-    return;
-  }
-  loginDiv.appendChild(
-    a(
-      "login",
-      `https://receipt.recurse.com/login?redirect_uri=${window.location.href}`,
-    ),
-  );
+  animateScene(0.0);
 }
