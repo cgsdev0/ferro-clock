@@ -183,6 +183,7 @@ function setupShader(canvas) {
     const o = idx % PER_SEG;
     const line = lines[l];
     const [x, y] = lineLerp(line, (o + 1) / (PER_SEG + 1));
+    /*
     const on = Boolean(now[n] & (1 << l));
     if (on) {
       idx2slot.push(idx);
@@ -192,8 +193,9 @@ function setupShader(canvas) {
       slot2idx.push(null);
       freeAgents.add(idx);
     }
+      */
     ballData[i + 0] = x * 0.2 + (n - 1.5) * 0.4 + Math.sign(n - 1.5) * 0.05;
-    ballData[i + 1] = -1.1;
+    ballData[i + 1] = y * 0.2;
     ballData[i + 2] = 0.0;
     ballData[i + 3] = 0.0;
   }
@@ -221,7 +223,31 @@ function setupShader(canvas) {
     gl.uniform1f(timeLoc, time);
 
     const now = timeToSegs(new Date());
+    console.log(now);
 
+    const px = 0;
+    const py = 1;
+    const vx = 2;
+    const vy = 3;
+
+    const floor = -0.99;
+
+    for (let i = 0; i < BALLS; i++) {
+      // gravity
+      ballData[i * 4 + vy] -= delta * 1;
+
+      // apply velocity
+      ballData[i * 4 + px] += delta * ballData[i * 4 + vx];
+      ballData[i * 4 + py] += delta * ballData[i * 4 + vy];
+
+      // interact with floor
+      if (ballData[i * 4 + py] < floor) {
+        ballData[i * 4 + py] = floor;
+        ballData[i * 4 + vy] = 0;
+      }
+    }
+
+    /*
     // free up agents
     for (let i = 0; i < BALLS; i++) {
       const l = Math.floor(i / PER_SEG) % 7;
@@ -289,6 +315,8 @@ function setupShader(canvas) {
       ballData[i + 2] = 0.0;
       ballData[i + 3] = 0.0;
     }
+      */
+
     gl.uniform4fv(ballsLoc, ballData);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
@@ -309,7 +337,7 @@ function setupShader(canvas) {
     requestAnimationFrame((currentTime) => {
       const delta = currentTime - previousTime;
       time += delta / 1000.0;
-      animateScene(delta);
+      animateScene(delta / 1000);
       previousTime = currentTime;
     });
   };
