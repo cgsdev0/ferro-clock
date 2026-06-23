@@ -223,27 +223,59 @@ function setupShader(canvas) {
     gl.uniform1f(timeLoc, time);
 
     const now = timeToSegs(new Date());
-    console.log(now);
 
-    const px = 0;
-    const py = 1;
-    const vx = 2;
-    const vy = 3;
+    const PX = 0;
+    const PY = 1;
+    const VX = 2;
+    const VY = 3;
 
     const floor = -0.99;
 
+    // update
     for (let i = 0; i < BALLS; i++) {
       // gravity
-      ballData[i * 4 + vy] -= delta * 1;
+      ballData[i * 4 + VY] -= delta * 0.1;
+
+      // apply magnets
+      for (let n = 0; n < now.length; ++n) {
+        // which number
+        for (let s = 0; s < 7; ++s) {
+          const on = Boolean(now[n] & (1 << s));
+          if (!on) continue;
+          // which segment
+          for (let j = 0; j < PER_SEG; ++j) {
+            // point along line
+            const line = lines[s];
+            let [x, y] = lineLerp(line, (j + 1) / (PER_SEG + 1));
+            // transform to number local
+            x = x * 0.2 + (n - 1.5) * 0.4 + Math.sign(n - 1.5) * 0.05;
+            y = y * 0.2;
+            const px = ballData[i * 4 + PX];
+            const py = ballData[i * 4 + PY];
+            let fx = px - x;
+            let fy = py - y;
+            const d2 = fx * fx + fy * fy;
+            const d = Math.sqrt(d2);
+            if (d > 0.05) continue;
+            fx /= d;
+            fy /= d;
+            const f = 0.001;
+            ballData[i * 4 + VX] -= (f * fx) / Math.max(d2, 2.0);
+            ballData[i * 4 + VY] -= (f * fy) / Math.max(d2, 2.0);
+          }
+        }
+      }
+      // decelerate X
+      ballData[i * 4 + VX] *= 0.99;
 
       // apply velocity
-      ballData[i * 4 + px] += delta * ballData[i * 4 + vx];
-      ballData[i * 4 + py] += delta * ballData[i * 4 + vy];
+      ballData[i * 4 + PX] += delta * ballData[i * 4 + VX];
+      ballData[i * 4 + PY] += delta * ballData[i * 4 + VY];
 
       // interact with floor
-      if (ballData[i * 4 + py] < floor) {
-        ballData[i * 4 + py] = floor;
-        ballData[i * 4 + vy] = 0;
+      if (ballData[i * 4 + PY] < floor) {
+        ballData[i * 4 + PY] = floor;
+        ballData[i * 4 + VY] = 0;
       }
     }
 
