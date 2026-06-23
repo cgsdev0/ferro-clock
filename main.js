@@ -194,7 +194,7 @@ function setupShader(canvas) {
     }
     ballData[i + 0] = x * 0.2 + (n - 1.5) * 0.4 + Math.sign(n - 1.5) * 0.05;
     ballData[i + 1] = -1.1;
-    ballData[i + 2] = 0.003 + Math.sin(i) * 0.001;
+    ballData[i + 2] = 0.003;
   }
 
   // Vertex information
@@ -285,7 +285,7 @@ function setupShader(canvas) {
       const factor = 1 - Math.pow(1 - 0.1, delta / 200.0);
       ballData[i + 0] += (tx - ballData[i + 0]) * factor;
       ballData[i + 1] += (ty - ballData[i + 1]) * factor;
-      ballData[i + 2] = 0.003 + Math.sin(i) * 0.001;
+      ballData[i + 2] = 0.003;
     }
     gl.uniform3fv(ballsLoc, ballData);
 
