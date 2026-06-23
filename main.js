@@ -18,7 +18,7 @@ in vec2 vUv;
 out vec4 fragColor;
 uniform float time;
 
-uniform vec3 balls[${BALLS}];
+uniform vec4 balls[${BALLS}];
 
 float circle(vec2 uv, vec2 pos, float r) {
     // wobble
@@ -34,8 +34,8 @@ void main() {
   vec3 color = vec3(0.0);
   float influence = 0.0;
   for (int i = 0; i < ${BALLS}; ++i) {
-    vec3 b = balls[i];
-    influence = max(influence, circle(vUv, b.xy, b.z));
+    vec4 b = balls[i];
+    influence = max(influence, circle(vUv, b.xy, 0.003));
   }
   color += step(0.12, influence) * vec3(1.0);
   // color = vec3(influence);
@@ -172,12 +172,12 @@ function setupShader(canvas) {
   const timeLoc = gl.getUniformLocation(shaderProgram, "time");
   const ballsLoc = gl.getUniformLocation(shaderProgram, "balls");
 
-  const balls = Array(BALLS * 3).fill(0);
+  const balls = Array(BALLS * 4).fill(0);
   const ballData = new Float32Array(balls);
 
   const now = timeToSegs(new Date());
-  for (let i = 0; i < BALLS * 3; i += 3) {
-    const idx = i / 3;
+  for (let i = 0; i < BALLS * 4; i += 4) {
+    const idx = i / 4;
     const l = Math.floor(idx / PER_SEG) % 7;
     const n = Math.floor(idx / PER_SEG / 7);
     const o = idx % PER_SEG;
@@ -194,7 +194,8 @@ function setupShader(canvas) {
     }
     ballData[i + 0] = x * 0.2 + (n - 1.5) * 0.4 + Math.sign(n - 1.5) * 0.05;
     ballData[i + 1] = -1.1;
-    ballData[i + 2] = 0.003;
+    ballData[i + 2] = 0.0;
+    ballData[i + 3] = 0.0;
   }
 
   // Vertex information
@@ -248,8 +249,8 @@ function setupShader(canvas) {
         let minDist = 1000.0;
         let best = null;
         freeAgents.forEach((agent) => {
-          const x = ballData[agent * 3];
-          const y = ballData[agent * 3 + 1];
+          const x = ballData[agent * 4];
+          const y = ballData[agent * 4 + 1];
           const d2 = (x - tx) * (x - tx) + (y - ty) * (y - ty);
           if (d2 < minDist) {
             minDist = d2;
@@ -262,8 +263,8 @@ function setupShader(canvas) {
       }
     }
     // move everybody around
-    for (let i = 0; i < BALLS * 3; i += 3) {
-      const idx = i / 3;
+    for (let i = 0; i < BALLS * 4; i += 4) {
+      const idx = i / 4;
       const assigned = idx2slot[idx];
 
       if (assigned === null) {
@@ -285,9 +286,10 @@ function setupShader(canvas) {
       const factor = 1 - Math.pow(1 - 0.1, delta / 200.0);
       ballData[i + 0] += (tx - ballData[i + 0]) * factor;
       ballData[i + 1] += (ty - ballData[i + 1]) * factor;
-      ballData[i + 2] = 0.003;
+      ballData[i + 2] = 0.0;
+      ballData[i + 3] = 0.0;
     }
-    gl.uniform3fv(ballsLoc, ballData);
+    gl.uniform4fv(ballsLoc, ballData);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
     aVertexPosition = gl.getAttribLocation(shaderProgram, "aVertexPosition");
