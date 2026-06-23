@@ -259,7 +259,7 @@ function setupShader(canvas) {
             if (d > 0.05) continue;
             fx /= d;
             fy /= d;
-            const f = 0.001;
+            const f = delta * 0.2;
             ballData[i * 4 + VX] -= (f * fx) / Math.max(d2, 2.0);
             ballData[i * 4 + VY] -= (f * fy) / Math.max(d2, 2.0);
           }
