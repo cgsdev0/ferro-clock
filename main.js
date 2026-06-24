@@ -8,6 +8,7 @@ void main() {
 }
 `;
 
+const RADIUS = 0.003;
 const PER_SEG = 20;
 const BALLS = 7 * 4 * PER_SEG;
 
@@ -35,7 +36,7 @@ void main() {
   float influence = 0.0;
   for (int i = 0; i < ${BALLS}; ++i) {
     vec4 b = balls[i];
-    influence = max(influence, circle(vUv, b.xy, 0.003));
+    influence = max(influence, circle(vUv, b.xy, ${RADIUS}));
   }
   color += step(0.12, influence) * vec3(1.0);
   // color = vec3(influence);
@@ -233,8 +234,9 @@ function setupShader(canvas) {
 
     // update
     for (let i = 0; i < BALLS; i++) {
+      let dampen = false;
       // gravity
-      ballData[i * 4 + VY] -= delta * 0.1;
+      ballData[i * 4 + VY] -= delta * 0.05;
 
       // apply magnets
       for (let n = 0; n < now.length; ++n) {
@@ -243,10 +245,10 @@ function setupShader(canvas) {
           const on = Boolean(now[n] & (1 << s));
           if (!on) continue;
           // which segment
-          for (let j = 0; j < PER_SEG; ++j) {
+          for (let j = 0; j < PER_SEG + 1; ++j) {
             // point along line
             const line = lines[s];
-            let [x, y] = lineLerp(line, (j + 1) / (PER_SEG + 1));
+            let [x, y] = lineLerp(line, j / PER_SEG);
             // transform to number local
             x = x * 0.2 + (n - 1.5) * 0.4 + Math.sign(n - 1.5) * 0.05;
             y = y * 0.2;
@@ -257,6 +259,7 @@ function setupShader(canvas) {
             const d2 = fx * fx + fy * fy;
             const d = Math.sqrt(d2);
             if (d > 0.05) continue;
+            if (d < 0.01) dampen = true;
             fx /= d;
             fy /= d;
             const f = delta * 0.2;
@@ -267,6 +270,33 @@ function setupShader(canvas) {
       }
       // decelerate X
       ballData[i * 4 + VX] *= 0.99;
+
+      // dampen
+      if (dampen) {
+        ballData[i * 4 + VX] *= 0.8;
+        ballData[i * 4 + VY] *= 0.8;
+      }
+
+      // pushing force
+      for (let j = 0; j < BALLS; ++j) {
+        const x1 = ballData[i * 4 + PX];
+        const y1 = ballData[i * 4 + PY];
+        const x2 = ballData[j * 4 + PX];
+        const y2 = ballData[j * 4 + PY];
+        let fx = x2 - x1;
+        let fy = y2 - y1;
+        const d2 = fx * fx + fy * fy;
+        if (d2 <= 0) continue;
+        const d = Math.sqrt(d2);
+        fx /= d;
+        fy /= d;
+        if (d > 6 * RADIUS) {
+          continue;
+        }
+        const push = 0.05 * delta;
+        ballData[i * 4 + VX] -= fx * push;
+        ballData[i * 4 + VY] -= fy * push;
+      }
 
       // apply velocity
       ballData[i * 4 + PX] += delta * ballData[i * 4 + VX];
